@@ -214,6 +214,7 @@ export default function App() {
             />
           )}
 
+// test line
           {clientView === 'summary' && (
             <ClientSummary
               pillars={getSummaryPillars()}
