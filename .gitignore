@@ -13,4 +13,12 @@ dist/
 .next/
 .env
 .env.*
+<<<<<<< HEAD
 >>>>>>> c136beaf (chore: stop tracking node_modules & dist; add .gitignore)
+=======
+.env
+.env.*
+node_modules/
+dist/
+.next/
+>>>>>>> 85a4e643 (chore: stop tracking .env (ignore))
