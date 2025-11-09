@@ -13,7 +13,8 @@ type Props = {
 };
 
 export function DailyObservation({ clientId, onBack, onSaved }: Props) {
-  const client = React.useMemo(() => (clientId ? storage.getClient(clientId) : null), [clientId]);
+  const client = React.useMemo(() => (clientId ? storage.getClient(clientId) : undefined), [clientId]);
+
   const [text, setText] = React.useState('');
   const [mood, setMood] = React.useState<number>(5);
   const [observations, setObservations] = React.useState<storage.Observation[]>([]);
@@ -46,16 +47,23 @@ export function DailyObservation({ clientId, onBack, onSaved }: Props) {
       alert('Please write a short note before saving.');
       return;
     }
-    storage.addObservation(client.id, {
+
+    // Create a new observation (AI-storage shape: includes "text")
+    const newObservation: storage.Observation = {
       id: `obs-${Date.now()}`,
       dateISO: new Date().toISOString(),
       text,
       mood,
       flagged: false,
-    });
+    };
+
+    storage.addObservation(client.id, newObservation);
     setObservations(storage.getObservations(client.id));
+
+    // Reset form
     setText('');
     setMood(5);
+
     onSaved?.(client.id);
   };
 
@@ -124,7 +132,15 @@ export function DailyObservation({ clientId, onBack, onSaved }: Props) {
               {observations.slice(0, 5).map((o) => (
                 <div key={o.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
                   <div className="flex items-center justify-between mb-2 text-sm text-slate-600">
-                    <span>{new Date(o.dateISO).toLocaleString()}</span>
+                    <span>
+                      {new Date(o.dateISO).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
                     <span>
                       Mood: <span className="font-medium text-slate-800">{o.mood}</span>/10
                     </span>

@@ -1,115 +1,122 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import * as storage from '../lib/storage';
-import { Card } from './ui/card';
-import { Button } from './ui/button';
-import { Textarea } from './ui/textarea';
-import { Slider } from './ui/slider';
 
 type Props = {
-  clientId: string;
+  clientId?: string;
   onBack: () => void;
   onSaved?: (clientId: string) => void;
 };
 
-export function DailyObservation({ clientId, onBack, onSaved }: Props) {
-  const client = React.useMemo(() => (clientId ? storage.getClient(clientId) : null), [clientId]);
-  const [text, setText] = React.useState('');
-  const [mood, setMood] = React.useState<number>(5);
-  const [observations, setObservations] = React.useState<storage.Observation[]>([]);
+const FALLBACK_ID = 'default-client';
 
-  React.useEffect(() => {
-    if (!clientId) return;
-    setObservations(storage.getObservations(clientId));
-  }, [clientId]);
+export default function DailyObservations({ clientId, onBack, onSaved }: Props) {
+  const safeClientId = useMemo(() => (clientId?.trim() ? clientId : FALLBACK_ID), [clientId]);
 
-  if (!client) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-2xl mx-auto space-y-4">
-          <Card className="p-6 bg-white border-slate-200 shadow-sm">
-            <p className="text-slate-900 mb-2">Daily Observation</p>
-            <p className="text-slate-500">Please complete the assessment first.</p>
-            <div className="mt-4">
-              <Button variant="outline" onClick={onBack}>Back</Button>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+  const [mood, setMood] = useState<number>(5);
+  const [note, setNote] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    if (!text.trim()) {
-      alert('Please write a short note before saving.');
-      return;
-    }
-    storage.addObservation(client.id, {
-      id: `obs-${Date.now()}`,
-      dateISO: new Date().toISOString(),
-      text,
-      mood,
-      flagged: false,
-    });
-    setObservations(storage.getObservations(client.id));
-    setText('');
-    setMood(5);
-    onSaved?.(client.id);
+  const onNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setNote(e.target.value);
   };
 
+  function handleSave() {
+    setSaving(true);
+    try {
+      storage.addObservation(safeClientId, { 
+        mood, 
+        note: String(note ?? '')
+      });
+      setNote('');
+      setMood(5);
+      onSaved?.(safeClientId);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <Card className="p-6 bg-white border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-900 mb-1">Daily Observation</p>
-              <p className="text-slate-500 text-sm">For: {client.name || client.id}</p>
-            </div>
-            <Button variant="outline" onClick={onBack}>Back</Button>
-          </div>
+    <div style={{ maxWidth: 880, margin: '0 auto', padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Daily Observation</h2>
+        <button onClick={onBack} style={btnOutline}>Back</button>
+      </div>
 
-          <div className="mt-6">
-            <p className="text-slate-700 mb-2">Mood / Wellness (0–10)</p>
-            <Slider value={[mood]} onValueChange={(v) => setMood(v[0])} min={0} max={10} step={1} className="w-full" />
-            <div className="mt-2 text-slate-600">Current: {mood}/10</div>
-          </div>
+      <div style={card}>
+        <p style={{ color: '#475569', fontSize: 14, marginBottom: 12 }}>
+          Quick check-in (0–10) and an optional note about your day.
+        </p>
 
-          <div className="mt-6">
-            <p className="text-slate-700 mb-2">Notes</p>
-            <Textarea
-              rows={6}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Write a short reflection for today…"
-              className="bg-slate-50 border-slate-200"
-            />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#475569', marginBottom: 8 }}>
+            <span>Mood / Energy</span>
+            <span style={{ fontWeight: 600 }}>{mood}</span>
           </div>
-
-          <div className="mt-6 flex gap-2">
-            <Button onClick={handleSave}>Save Reflection</Button>
-            <Button variant="outline" onClick={onBack}>Back</Button>
+          <input
+            type="range"
+            min={0}
+            max={10}
+            step={1}
+            value={mood}
+            onChange={(e) => setMood(Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginTop: 4 }}>
+            <span>0</span><span>10</span>
           </div>
-        </Card>
+        </div>
 
-        <Card className="p-6 bg-white border-slate-200 shadow-sm">
-          <p className="text-slate-900 mb-4">Recent reflections</p>
-          {observations.length === 0 ? (
-            <p className="text-slate-500 text-sm">No reflections yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {observations.slice(0, 5).map((o) => (
-                <div key={o.id} className="border border-slate-200 rounded-md p-3 bg-slate-50">
-                  <div className="flex items-center justify-between mb-2 text-sm text-slate-600">
-                    <span>{new Date(o.dateISO).toLocaleString()}</span>
-                    <span>Mood: {o.mood}/10</span>
-                  </div>
-                  <div className="text-slate-800 whitespace-pre-wrap">{o.text || '—'}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <label style={{ fontSize: 14, color: '#334155' }}>Optional note</label>
+          <textarea
+            placeholder="What worked today? What was a barrier?"
+            value={note}
+            onChange={onNoteChange}
+            rows={4}
+            style={textarea}
+          />
+        </div>
+
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={handleSave} disabled={saving} style={btn}>
+            {saving ? 'Saving...' : 'Save observation'}
+          </button>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Client: {safeClientId}</span>
+        </div>
       </div>
     </div>
   );
 }
+
+const card: React.CSSProperties = {
+  padding: 16,
+  background: 'white',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+};
+
+const textarea: React.CSSProperties = {
+  width: '100%',
+  border: '1px solid #cbd5e1',
+  borderRadius: 6,
+  padding: 10,
+  fontSize: 14,
+};
+
+const btn: React.CSSProperties = {
+  padding: '10px 14px',
+  background: '#0ea5e9',
+  color: 'white',
+  border: 'none',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+const btnOutline: React.CSSProperties = {
+  ...btn,
+  background: 'white',
+  color: '#0f172a',
+  border: '1px solid #cbd5e1',
+};

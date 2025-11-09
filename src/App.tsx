@@ -1,4 +1,4 @@
-// src/App.tsx — baseline wiring with toggle & working transfer
+// src/App.tsx — your design + always-ask-name + AI analysis on save
 import React from 'react';
 import { Toaster } from './components/ui/sonner';
 import { Button } from './components/ui/button';
@@ -26,7 +26,7 @@ import { Users, User } from 'lucide-react';
 // Data
 import { pillarData } from './data/pillarData';
 
-// Storage
+// Storage + AI
 import * as storage from './lib/storage';
 import { analyzeAssessment } from './lib/ai';
 
@@ -80,13 +80,16 @@ export default function App() {
   const [clientView, setClientView] = React.useState<ClientView>('home');
   const [therapistView, setTherapistView] = React.useState<TherapistView>('dashboard');
 
-  // single client id we keep across modes so data links up
+  // keep the same client ID across modes so data links up
   const [selectedClientId, setSelectedClientId] = useStoredState<string>('selectedClientId', 'client-001');
 
-  // force therapist observations screen to refresh after client saves
+  // store the client name (we prompt every assessment start)
+  const [clientName, setClientName] = useStoredState<string>('clientName', '');
+
+  // refresh therapist observation list when client saves
   const [obsRefreshKey, setObsRefreshKey] = React.useState(0);
 
-  // client assessment state (not persisted on purpose)
+  // assessment flow state
   const [currentPillarIndex, setCurrentPillarIndex] = React.useState(0);
   const [assessmentResponses, setAssessmentResponses] = React.useState<AssessmentResponses>({});
   const [selectedPriorities, setSelectedPriorities] = React.useState<number[]>([]);
@@ -99,6 +102,15 @@ export default function App() {
 
   /* -------- client flow -------- */
   const handleStartAssessment = () => {
+    // Always ask name before each new assessment
+    const entered = window.prompt("Before we begin, what’s your name?");
+    if (!entered || !entered.trim()) {
+      alert('Please enter your name to start the assessment.');
+      return;
+    }
+    setClientName(entered.trim());
+
+    // Reset and start fresh
     setCurrentPillarIndex(0);
     setAssessmentResponses({});
     setSelectedPriorities([]);
@@ -114,33 +126,39 @@ export default function App() {
     else setClientView('summary');
   };
 
+  // Save, run AI, then go to Thank You
   const handleSummaryComplete = async (priorities: number[]) => {
     setSelectedPriorities(priorities);
 
     const id = selectedClientId || 'client-001';
     const record: storage.ClientRecord = {
       id,
-      name: 'Demo Client', // replace later with a real captured name
+      name: clientName.trim() || 'Client',
       dateISO: new Date().toISOString(),
       responses: assessmentResponses,
       priorities,
     };
+
+    // Save the raw assessment
     storage.saveClient(record);
     setSelectedClientId(id);
 
-    // Trigger AI analysis
+    // Kick off AI analysis (non-blocking)
     try {
-      const aiResults = await analyzeAssessment(record);
-      storage.saveAIResults(id, aiResults);
-    } catch (error) {
-      console.error('AI analysis failed:', error);
-      // Continue anyway - don't block the user flow
+      const ai = await analyzeAssessment(record);
+      if (typeof (storage as any).saveAIResults === 'function') {
+        (storage as any).saveAIResults(id, ai);
+      } else {
+        localStorage.setItem(`ai:${id}`, JSON.stringify(ai));
+      }
+    } catch (err) {
+      console.error('AI analysis failed:', err);
     }
 
     setClientView('thank-you');
   };
 
-  /* -------- therapist nav -------- */
+  /* -------- therapist navigation -------- */
   const handleViewAssessment = (clientId: string) => {
     setSelectedClientId(clientId);
     setTherapistView('view-assessment');
@@ -179,27 +197,29 @@ export default function App() {
     <div className="min-h-screen">
       <Toaster />
 
-      {/* Toggle + current clientId (tiny debug badge) */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 items-end">
+      {/* compact toggle — bottom-right, out of the way */}
+      <div className="fixed bottom-4 right-4 z-50">
         <Button
           onClick={toggleUserMode}
           className={`shadow-lg ${
-            userRole === 'therapist' ? 'bg-slate-700 hover:bg-slate-800' : 'bg-teal-600 hover:bg-teal-700'
-          }`}
+            userRole === 'therapist'
+              ? 'bg-slate-700 hover:bg-slate-800'
+              : 'bg-teal-600 hover:bg-teal-700'
+          } text-xs px-3 py-2`}
+          title="Switch view"
         >
           {userRole === 'client' ? (
             <>
-              <Users className="size-4 mr-2" />
-              Switch to Therapist View
+              <Users className="size-3 mr-2" />
+              Therapist
             </>
           ) : (
             <>
-              <User className="size-4 mr-2" />
-              Switch to Client View
+              <User className="size-3 mr-2" />
+              Client
             </>
           )}
         </Button>
-        <div className="text-xs bg-black/70 text-white px-2 py-1 rounded">clientId: {selectedClientId}</div>
       </div>
 
       {/* CLIENT MODE */}
@@ -225,7 +245,6 @@ export default function App() {
             />
           )}
 
-// test line
           {clientView === 'summary' && (
             <ClientSummary
               pillars={getSummaryPillars()}

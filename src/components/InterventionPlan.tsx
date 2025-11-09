@@ -4,17 +4,20 @@ import * as storage from '../lib/storage';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
 import { ArrowLeft, Save, Plus, Trash2, Calendar, Sparkles } from 'lucide-react';
 import { pillarData } from '../data/pillarData';
+import { analyzeAssessment } from '../lib/ai';
 
 type Props = { clientId: string; onBack: () => void };
 
 /* ---------- Types & localStorage helpers ---------- */
 type GoalRow = {
   id: string;
-  areaId: number | null;        // pillar id
+  areaId: number | null;     // pillar id
   goal: string;
+  interventionsText: string; // free text (therapist writes)
   frequency: string;
   duration: string;
   status: 'planned' | 'in-progress' | 'completed';
@@ -25,8 +28,9 @@ type PlanDoc = {
   clientName?: string;
   therapist?: string;
   setting?: 'clinic' | 'home' | 'school' | 'community' | 'telehealth';
-  startDate?: string;           // yyyy-mm-dd
-  reviewDate?: string;          // yyyy-mm-dd
+  startDate?: string;        // yyyy-mm-dd
+  reviewDate?: string;       // yyyy-mm-dd
+  notes?: string;
   goals: GoalRow[];
   updatedISO: string;
 };
@@ -74,6 +78,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
   const [setting, setSetting] = React.useState<PlanDoc['setting']>('clinic');
   const [startDate, setStartDate] = React.useState('');
   const [reviewDate, setReviewDate] = React.useState('');
+  const [notes, setNotes] = React.useState('');
   const [goals, setGoals] = React.useState<GoalRow[]>([]);
 
   /* ---------------- AI state ---------------- */
@@ -85,7 +90,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
   // map pillar name -> id for aligning AI insights
   const nameToId = React.useMemo(() => {
     const map: Record<string, number> = {};
-    pillarData.forEach(p => (map[p.name.toLowerCase()] = p.id));
+    pillarData.forEach((p) => (map[p.name.toLowerCase()] = p.id));
     return map;
   }, []);
 
@@ -97,13 +102,15 @@ export function InterventionPlan({ clientId, onBack }: Props) {
       setSetting(existing.setting ?? 'clinic');
       setStartDate(existing.startDate ?? '');
       setReviewDate(existing.reviewDate ?? '');
+      setNotes(existing.notes ?? '');
       setGoals(existing.goals ?? []);
     } else {
       setGoals([
         {
-          id: crypto.randomUUID(),
+          id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
           areaId: null,
           goal: '',
+          interventionsText: '',
           frequency: '',
           duration: '',
           status: 'planned',
@@ -123,27 +130,22 @@ export function InterventionPlan({ clientId, onBack }: Props) {
           acc[p.id] = p.name.toLowerCase();
           return acc;
         }, {});
-        
+
         const assessmentPayload = {
           selectedTop3: client.priorities ?? [],
           responses: client.responses,
         };
-        
-        const resp = await fetch('/api/ot/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ assessment: assessmentPayload, pillarNameMap }),
-        });
-        const json = await resp.json();
-        if (!resp.ok || !json?.ok) throw new Error('AI analyze endpoint failed');
 
-        const plan: AiPlan = json.result?.plan;
-        const insights: AiPillarInsight[] = json.result?.insights?.insights ?? [];
+        // Use the same helper as ViewAssessment to avoid endpoint drift
+        const result = await analyzeAssessment(assessmentPayload, pillarNameMap);
 
-        // normalize to pillarId map
+        const plan: AiPlan | null = (result as any)?.plan ?? (result as any)?.overview ?? null;
+        const insightsArr: AiPillarInsight[] =
+          (result as any)?.insights?.insights ?? (result as any)?.insights ?? [];
+
         const byId: Record<number, AiPillarInsight> = {};
-        insights.forEach((it) => {
-          const id = nameToId[it.pillar_name.toLowerCase()];
+        insightsArr.forEach((it) => {
+          const id = nameToId[it.pillar_name?.toLowerCase?.() || ''];
           if (id) byId[id] = it;
         });
 
@@ -164,9 +166,10 @@ export function InterventionPlan({ clientId, onBack }: Props) {
     setGoals((g) => [
       ...g,
       {
-        id: crypto.randomUUID(),
+        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         areaId: null,
         goal: '',
+        interventionsText: '',
         frequency: '',
         duration: '',
         status: 'planned',
@@ -184,7 +187,8 @@ export function InterventionPlan({ clientId, onBack }: Props) {
       therapist: therapist.trim() || undefined,
       setting,
       startDate: startDate || undefined,
-      reviewDate: reviewDate || undefined,
+      reviewDate: reviewDate || undefined, // kept, label has no "(optional)"
+      notes: notes.trim() || undefined,
       goals,
       updatedISO: new Date().toISOString(),
     };
@@ -238,7 +242,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
           </div>
         </Card>
 
-        {/* plan meta (notes removed per request) */}
+        {/* plan meta */}
         <Card className="p-5 bg-white border-slate-200 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="md:col-span-2">
@@ -271,6 +275,17 @@ export function InterventionPlan({ clientId, onBack }: Props) {
               <Input type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} />
             </div>
           </div>
+
+          <div className="mt-4">
+            <label className="block text-sm text-slate-700 mb-1">Plan notes</label>
+            <Textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Key considerations, constraints, caregiver notes…"
+              className="bg-slate-50"
+            />
+          </div>
         </Card>
 
         {/* global AI suggestion */}
@@ -280,9 +295,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
               <Sparkles className="size-5 text-teal-700" />
             </div>
             <div className="flex-1">
-              <h2 className="text-slate-900 flex items-center gap-2">
-                AI-suggested focus area
-              </h2>
+              <h2 className="text-slate-900 flex items-center gap-2">AI-suggested focus area</h2>
               {aiLoading && <p className="text-sm text-slate-500 mt-1">Running analysis…</p>}
               {aiError && <p className="text-sm text-red-600 mt-1">{aiError}</p>}
               {!aiLoading && !aiError && aiPlan && (
@@ -304,7 +317,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
           </div>
         </Card>
 
-        {/* goals (AI insight per row; intervention buttons removed) */}
+        {/* goals (AI insight per row; interventions = free text) */}
         <Card className="p-5 bg-white border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-slate-900">Goals</h2>
@@ -346,7 +359,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
                     </div>
                   </div>
 
-                  {/* AI insight (moved BEFORE target area) */}
+                  {/* AI insight banner */}
                   <div className="mb-3 rounded-md border border-teal-200 bg-teal-50 p-3">
                     <div className="flex items-start gap-2">
                       <Sparkles className="size-4 mt-0.5 text-teal-700" />
@@ -355,7 +368,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
                           insight ? (
                             <>
                               <div className="font-medium">
-                                {pillarData.find(p => p.id === row.areaId)?.name}: key insight
+                                {pillarData.find((p) => p.id === row.areaId)?.name}: key insight
                               </div>
                               <div className="mt-1">{insight.trend_statement}</div>
                               <div className="mt-1 text-slate-700">{insight.consider_statement}</div>
@@ -370,7 +383,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
                     </div>
                   </div>
 
-                  {/* row grid (no intervention buttons) */}
+                  {/* row grid */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                     <div className="md:col-span-3">
                       <label className="block text-sm text-slate-700 mb-1">Target area</label>
@@ -401,7 +414,18 @@ export function InterventionPlan({ clientId, onBack }: Props) {
                       />
                     </div>
 
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-6">
+                      <label className="block text-sm text-slate-700 mb-1">Interventions (free text)</label>
+                      <Textarea
+                        rows={3}
+                        value={row.interventionsText}
+                        onChange={(e) => updateRow(row.id, { interventionsText: e.target.value })}
+                        placeholder="E.g., sensory modulation strategies, caregiver education, task grading…"
+                        className="bg-slate-50"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3">
                       <label className="block text-sm text-slate-700 mb-1">Frequency</label>
                       <select
                         className="w-full border rounded-md h-10 px-2 bg-white"
@@ -417,7 +441,7 @@ export function InterventionPlan({ clientId, onBack }: Props) {
                       </select>
                     </div>
 
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-3">
                       <label className="block text-sm text-slate-700 mb-1">Session duration</label>
                       <select
                         className="w-full border rounded-md h-10 px-2 bg-white"
@@ -449,3 +473,5 @@ export function InterventionPlan({ clientId, onBack }: Props) {
     </div>
   );
 }
+
+export default InterventionPlan;
