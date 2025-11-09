@@ -1,8 +1,23 @@
-import { ViewType, AssessmentData } from '../App';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Sparkles, ArrowLeft, TrendingUp, AlertCircle, Target, Calendar } from 'lucide-react';
+
+// Local types for this component
+type ViewType = 'welcome' | 'assessment' | 'summary' | 'next-steps' | 'daily';
+
+type PillarData = {
+  pillarName: string;
+  score: number;
+  working?: string;
+  challenging?: string;
+};
+
+type AssessmentData = {
+  pillars: PillarData[];
+  priorities: string[];
+  completedDate: string;
+};
 
 interface AISummaryScreenProps {
   assessmentData: AssessmentData | null;

@@ -19,7 +19,7 @@ import { TherapistDashboard } from './components/TherapistDashboard';
 import { ViewAssessment } from './components/ViewAssessment';
 import { DailyObservationViewer } from './components/DailyObservationViewer';
 import { InterventionPlan } from './components/InterventionPlan';
-import { SessionNotes } from './components/SessionNotes';
+import SessionNotes from './components/SessionNotes';
 import { TherapistComms } from './components/TherapistComms';
 import { Users, User } from 'lucide-react';
 
@@ -28,6 +28,7 @@ import { pillarData } from './data/pillarData';
 
 // Storage
 import * as storage from './lib/storage';
+import { analyzeAssessment } from './lib/ai';
 
 /* ---------------- types ---------------- */
 type ClientView =
@@ -113,7 +114,7 @@ export default function App() {
     else setClientView('summary');
   };
 
-  const handleSummaryComplete = (priorities: number[]) => {
+  const handleSummaryComplete = async (priorities: number[]) => {
     setSelectedPriorities(priorities);
 
     const id = selectedClientId || 'client-001';
@@ -126,6 +127,16 @@ export default function App() {
     };
     storage.saveClient(record);
     setSelectedClientId(id);
+
+    // Trigger AI analysis
+    try {
+      const aiResults = await analyzeAssessment(record);
+      storage.saveAIResults(id, aiResults);
+    } catch (error) {
+      console.error('AI analysis failed:', error);
+      // Continue anyway - don't block the user flow
+    }
+
     setClientView('thank-you');
   };
 

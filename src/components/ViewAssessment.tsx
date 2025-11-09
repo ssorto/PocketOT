@@ -5,6 +5,9 @@ import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { pillarData } from '../data/pillarData';
+import AiOverviewCard from "./AiOverviewCard";
+import AiPillarInsights from "./AiPillarInsights";
+import { analyzeAssessment } from "../lib/ai";
 
 type Props = {
   clientId: string;
@@ -22,9 +25,21 @@ export function ViewAssessment({
   onViewSessionNotes,
 }: Props) {
   const [client, setClient] = React.useState<storage.ClientRecord | undefined>();
+  const [aiLoading, setAiLoading] = React.useState(false);
+  const [aiOverview, setAiOverview] = React.useState<any>(null);
+  const [aiInsights, setAiInsights] = React.useState<any[] | null>(null);
 
   React.useEffect(() => {
     setClient(clientId ? storage.getClient(clientId) : undefined);
+  }, [clientId]);
+
+  React.useEffect(() => {
+    const all = storage.getAllClients();
+    const rec = all[clientId];
+    if (rec?.ai) {
+      setAiOverview(rec.ai.overview ?? null);
+      setAiInsights(rec.ai.insights ?? null);
+    }
   }, [clientId]);
 
   if (!client) {
@@ -46,6 +61,42 @@ export function ViewAssessment({
   }
 
   const scoreFor = (id: number) => client.responses[id]?.rating ?? 0;
+
+  async function runAI() {
+    try {
+      setAiLoading(true);
+      const all = storage.getAllClients();
+      const rec = all[clientId];
+      if (!rec?.responses) {
+        alert("No saved responses for this client.");
+        return;
+      }
+
+      const pillarNameMap = Object.fromEntries(
+        pillarData.map(p => [p.id, p.name.toLowerCase()])
+      );
+
+      const assessmentPayload = {
+        selectedTop3: rec.priorities ?? [],
+        responses: rec.responses,
+      };
+
+      const result = await analyzeAssessment(assessmentPayload, pillarNameMap);
+
+      storage.saveClientAI(clientId, {
+        overview: result.overview,
+        insights: result.insights?.insights ?? [],
+      });
+
+      setAiOverview(result.overview);
+      setAiInsights(result.insights?.insights ?? []);
+    } catch (e:any) {
+      console.error(e);
+      alert(e?.message ?? "AI analysis failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen p-6 bg-gray-50">
@@ -103,6 +154,27 @@ export function ViewAssessment({
             ) : (
               <div className="text-slate-400 text-sm">None selected.</div>
             )}
+          </div>
+
+          {/* AI controls */}
+          <div className="mt-6 flex items-center gap-8">
+            <button
+              className="px-4 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+              onClick={runAI}
+              disabled={aiLoading}
+            >
+              {aiLoading ? "Generating…" : "Generate AI Summary"}
+            </button>
+            {(aiOverview || (aiInsights && aiInsights.length)) && (
+              <span className="text-slate-500 text-sm">
+                Last updated: {new Date().toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <AiOverviewCard data={aiOverview ?? undefined} />
+            <AiPillarInsights items={aiInsights ?? undefined} />
           </div>
 
           {/* nav */}

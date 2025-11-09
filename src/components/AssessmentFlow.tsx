@@ -1,11 +1,26 @@
 import { useState } from 'react';
-import { ViewType, AssessmentData, PillarResponse } from '../App';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Textarea } from './ui/textarea';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+
+// Local types for this component
+type ViewType = 'welcome' | 'assessment' | 'summary' | 'next-steps' | 'daily';
+
+type PillarResponse = {
+  pillarName: string;
+  score: number;
+  working: string;
+  challenging: string;
+};
+
+type AssessmentData = {
+  pillars: PillarResponse[];
+  priorities: string[];
+  completedDate: string;
+};
 
 interface AssessmentFlowProps {
   onComplete: (data: AssessmentData) => void;

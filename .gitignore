@@ -1,3 +1,16 @@
+<<<<<<< HEAD
 .env
 node_modules/
 dist/
+=======
+node_modules/
+dist/
+.next/
+.env
+.env.*
+node_modules/
+dist/
+.next/
+.env
+.env.*
+>>>>>>> c136beaf (chore: stop tracking node_modules & dist; add .gitignore)
